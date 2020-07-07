@@ -1,0 +1,102 @@
+---
+title: "How well do we exercise? "
+author: "SDP"
+subtitle: 'Peer-graded Assignment: PML'
+output:
+  html_document:
+    df_print: paged
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE,cache=TRUE)
+```
+### Executive summary
+This reports aims at predicting how well an exercise is performed using data from from accelerometers on the belt, forearm, arm, and dumbell worn by 6 individuals who participated in an experiemnt. The 6 participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. The aim of the report is to predict the variable classe using a machine learning algorithm.
+
+The report is structured as follow: in section 1, explorative data analysis is performed, in section 2 model selection is carried out and in section 3 the conclusions are drawn. All the code can be found in the appendix.
+
+### Data pre-processing
+The data is loaded, already split into a training and test set.
+```{r loadData}
+#set urls
+urlTrain<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+urlTest<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+#download files
+download.file(url=urlTrain,destfile="train.csv")
+download.file(url=urlTest,destfile="test.csv")
+#read data
+trainData<-read.csv("train.csv", na.strings=c("","#DIV/0!"))
+testData<-read.csv("test.csv", na.strings=c("","#DIV/0!"))
+```
+There are 160 variables in the dataset.The variable that needs to be predicted is classe, a factor variable with 5 levels ranging from A to E. From the summary statistics below, it can be seen that few variables have mostly missing observations (e.g. max_picth_belt)
+```{r freq}
+summary(trainData)
+```
+Since the number of potential regressors is high, few strategies are applied to reduce dimensionality. As a first step, variables which contain more than 60% of missing observations are excluded from the sample. 
+```{r missing}
+trainDataTransformed <- trainData[, colMeans(is.na(trainData)) <= .6]
+```
+Secondly,variables that stay relatively constant over the sample ,the so-called "near-zero variance" variables, are removed.
+```{r nzv}
+nzv <- nearZeroVar(trainDataTransformed)
+trainDataTransformed <- trainDataTransformed[, -nzv]
+
+```
+Lastly, descriptive variables that do not contain any predictive power are excluded from the sample as well.  
+```{r desc}
+library(dplyr)
+trainDataTransformed<-trainDataTransformed %>% select(-c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp,num_window))
+
+```
+
+In order to perform validation, the training set is split  into a validation (20%) and training set(80%).
+```{r valid}
+training <- createDataPartition(trainDataTransformed$classe, p=0.8, list=F)
+trainDataFinal <- trainDataTransformed[training, ]
+validateData <- trainDataTransformed[training, ]
+
+```
+
+### Model 
+The random forest algorithm is trained to the dataset using the original algorithm developed in Breiman, L. (2001), Random Forests, Machine Learning 45(1), 5-32. This algorthhm is chosen for its high accuracy. 10-fold cross validation is carried out to evaluate the efficiency of the model This means that the sample is split into 10 random groups and each group is taken as test set to evaluate the model that has been trained on the other groups. The model efficiency is summarized using the sample of model evaluation scores.
+```{r model}
+library(caret)
+library(randomForest)
+
+#set seed for reproducability
+set.seed(7)
+
+#control parameters for cross-validation
+control.parms <- trainControl(## 10-fold CV
+                           method = "cv",
+                           number = 10 )
+#train model
+modRF <- randomForest(classe ~ ., data = trainDataFinal, importance = TRUE,   trControl=control.parms)
+
+#results
+modRF
+
+#in sample accuracy
+confusionMatrix( predict(modRF,trainDataFinal),trainDataFinal$classe)$overall
+```
+The final model performs really well in-sample, with an  out-of bag error equal to 0.45% and an accuracy of 0.99. This means that the model is very close to perfect prediciton with the training set. Next, out-of-sample performance is evaluated on the validation set.
+```{r outsample}
+confusionMatrix( predict(modRF,validateData),validateData$classe)$overall
+
+```
+The model performs really well out-of-sample as well with an accurancy of 1 with confidence interval between 0.9998 and 1
+The following figure shows the 10 most important variables to the model. It can be seens that roll_belt and yaw_belt are the 2 most important variables in predicting classe according to the  
+```{r varImp}
+varImpPlot(modRF, n.var = 10)
+```
+
+### Predictions
+The random forest algorithm is used to predict the variable classe with an in-sample-accurancy of and an out-of-sample accuracy of. 
+The model is then used on the test data and the results can be seen below.
+
+```{r predictions}
+predict(modRF,testData)
+
+```
+
+
+
