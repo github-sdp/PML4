@@ -2,20 +2,17 @@
 title: "How well do we exercise? "
 author: "SDP"
 subtitle: 'Peer-graded Assignment: PML'
-output:
-  html_document:
-    df_print: paged
+output: github_document
+  
 ---
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning=FALSE, message=FALSE,cache=TRUE)
 ```
 ### Executive summary
-This reports aims at predicting how well an exercise is performed using data from from accelerometers on the belt, forearm, arm, and dumbell worn by 6 individuals who participated in an experiemnt. The 6 participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. The aim of the report is to predict the variable classe using a machine learning algorithm.
-
-The report is structured as follow: in section 1, explorative data analysis is performed, in section 2 model selection is carried out and in section 3 the conclusions are drawn. All the code can be found in the appendix.
+This reports aims at predicting how well an exercise is performed using data from from accelerometers on the belt, forearm, arm, and dumbell worn by 6 individuals who participated in an experiment. The 6 participants were asked to perform one set of 10 repetitions of the Unilateral Dumbbell Biceps Curl in five different fashions: exactly according to the specification (Class A), throwing the elbows to the front (Class B), lifting the dumbbell only halfway (Class C), lowering the dumbbell only halfway (Class D) and throwing the hips to the front (Class E). Class A corresponds to the specified execution of the exercise, while the other 4 classes correspond to common mistakes. The aim of the report is to predict the variable classe using a machine learning algorithm.The report is structured as follow: in section 1 the data is pre-processed, a in section 2 model selection is carried out and in section 3 the predictions out-of-sample are are performed. 
 
 ### Data pre-processing
-The data is loaded, already split into a training and test set.
+The data is loaded, already split into a training and test set. The training set is used to train the model, while the test set is used to perform out-of-sample predictions.
 ```{r loadData}
 #set urls
 urlTrain<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
@@ -27,34 +24,43 @@ download.file(url=urlTest,destfile="test.csv")
 trainData<-read.csv("train.csv", na.strings=c("","#DIV/0!"))
 testData<-read.csv("test.csv", na.strings=c("","#DIV/0!"))
 ```
-There are 160 variables in the dataset.The variable that needs to be predicted is classe, a factor variable with 5 levels ranging from A to E. From the summary statistics below, it can be seen that few variables have mostly missing observations (e.g. max_picth_belt)
-```{r freq}
-summary(trainData)
+Since the test set will be used only for out-of-sample predictions, the rest of the report will focus on the testing set. As a preliminary step, the dimensions of the dataset are checked. 
+```{r prelim}
+dim(trainData)
 ```
-Since the number of potential regressors is high, few strategies are applied to reduce dimensionality. As a first step, variables which contain more than 60% of missing observations are excluded from the sample. 
+The dataset contains 19622 observations and 160 variables. The variable that needs to be predicted is classe, a factor variable with 5 levels ranging from A to E. As an additional step, it is checked whether all variables contain data. From the plot below, it can be seen that this is not the case: some variables have only missing observations. This is a potential issue so it will be dealt with in the pre-processing phase.
+```{r freq}
+library(ggplot2)
+ library(DataExplorer)
+ plot_missing(trainData, missing_only = TRUE)
+
+```
+Since the number of potential regressors is high and there are quite a few missing values, few strategies are applied to reduce dimensionality.  As a first step, variables which contain more than 60% of missing observations are excluded from the sample. 
 ```{r missing}
 trainDataTransformed <- trainData[, colMeans(is.na(trainData)) <= .6]
 ```
-Secondly,variables that stay relatively constant over the sample ,the so-called "near-zero variance" variables, are removed.
+Secondly,variables that stay relatively constant over the sample ,the so-called "near-zero variance" variables, are removed. This is done because variables with near-zero variance tend to have very little predictive power.
 ```{r nzv}
+library(caret)
 nzv <- nearZeroVar(trainDataTransformed)
 trainDataTransformed <- trainDataTransformed[, -nzv]
 
 ```
-Lastly, descriptive variables that do not contain any predictive power are excluded from the sample as well.  
+Lastly, descriptive variables that do not contain any relevant information for prediciton are excluded from the sample as well.  
 ```{r desc}
 library(dplyr)
 trainDataTransformed<-trainDataTransformed %>% select(-c(X,user_name, raw_timestamp_part_1, raw_timestamp_part_2,cvtd_timestamp,num_window))
 
 ```
 
-In order to perform validation, the training set is split  into a validation (20%) and training set(80%).
+Now that the training dataset has been pre-processed, it is further split into a validation (20%) and training set(80%). This makes it possible to tune parameters using the validation set, before applying the model to the test set for prediction.
 ```{r valid}
 training <- createDataPartition(trainDataTransformed$classe, p=0.8, list=F)
 trainDataFinal <- trainDataTransformed[training, ]
 validateData <- trainDataTransformed[training, ]
 
 ```
+The dataset is now ready for model selection.
 
 ### Model 
 The random forest algorithm is trained to the dataset using the original algorithm developed in Breiman, L. (2001), Random Forests, Machine Learning 45(1), 5-32. This algorthhm is chosen for its high accuracy. 10-fold cross validation is carried out to evaluate the efficiency of the model This means that the sample is split into 10 random groups and each group is taken as test set to evaluate the model that has been trained on the other groups. The model efficiency is summarized using the sample of model evaluation scores.
@@ -71,27 +77,30 @@ control.parms <- trainControl(## 10-fold CV
                            number = 10 )
 #train model
 modRF <- randomForest(classe ~ ., data = trainDataFinal, importance = TRUE,   trControl=control.parms)
-
+```
+The results summary can be seen below 
+``` {r res}
 #results
 modRF
-
-#in sample accuracy
+```
+ The final number of trees is 500 and the number of variables tried at each split is 7. The out-of bag error equal to 0.41%.The in sample accuracy is checked calculating the confusion matrix on the training set.
+```{r insample}
 confusionMatrix( predict(modRF,trainDataFinal),trainDataFinal$classe)$overall
 ```
-The final model performs really well in-sample, with an  out-of bag error equal to 0.45% and an accuracy of 0.99. This means that the model is very close to perfect prediciton with the training set. Next, out-of-sample performance is evaluated on the validation set.
+The final model performs really well in-sample,  an accuracy of 0.99. This means that the model is very close to perfect prediciton in the training set. Next, out-of-sample performance is evaluated on the validation set. This is a necessary step because sometimes models predict really well in sample but not-so-well out-of-sample due to overfitting. The confusion matrix is computed using the validaition set.
 ```{r outsample}
 confusionMatrix( predict(modRF,validateData),validateData$classe)$overall
 
 ```
-The model performs really well out-of-sample as well with an accurancy of 1 with confidence interval between 0.9998 and 1
-The following figure shows the 10 most important variables to the model. It can be seens that roll_belt and yaw_belt are the 2 most important variables in predicting classe according to the  
+The model performs really well out-of-sample as well with an accurancy of 1 with confidence interval between 0.9998 and 1. This confirms that the model chosen by the random forest algorithm is a good model.
+
+The following figure shows the 10 most important variables used in the model to predict the variable classe. It can be seensthat roll_belt and yaw_belt are the 2 most important according to the Mean Decrease Accuracy and Mean Decrease Gini criteria.
 ```{r varImp}
 varImpPlot(modRF, n.var = 10)
 ```
 
 ### Predictions
-The random forest algorithm is used to predict the variable classe with an in-sample-accurancy of and an out-of-sample accuracy of. 
-The model is then used on the test data and the results can be seen below.
+The random forest algorithm is  used on the test data and the results can be seen below.
 
 ```{r predictions}
 predict(modRF,testData)
