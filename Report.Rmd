@@ -3,6 +3,8 @@ title: "How well do we exercise? "
 author: "SDP"
 subtitle: 'Peer-graded Assignment: PML'
 output: github_document
+rmarkdown::render
+
   
 ---
 ```{r setup, include=FALSE}
